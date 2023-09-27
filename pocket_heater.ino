@@ -1,4 +1,5 @@
 #include <Arduino.h>
+//#include <stint.h>
 #define clock_pin 0
 #define latch_pin 1
 #define data_pin 2
@@ -7,7 +8,7 @@
 #define heater_pin 5
 #define coefficient_A 298.15
 #define coefficient_B 4036
-#define starting_power_level 2
+#define starting_power_level 2 //NOLINT
 //#define heater_r 100
 
 byte temp_set[4] = {30, 35, 45, 55};
@@ -26,7 +27,12 @@ private:
     const static long int coefficient = 1125300L;
 
 public:
-
+    enum class Button_state
+    {
+        TRIGGERED,
+        UNTRIGGERED,
+        ASKED
+    };
     [[nodiscard]] static long read_voltage()
     {
         ADMUX = _BV(MUX3) | _BV(MUX2);
@@ -120,7 +126,7 @@ public:
         {
             set_pixel(i, true);
             set_pixel(i+4, true);
-            delay(100);
+            delay(200);
         }
         clear_display();
         for(byte i = 0; i < Sensors::voltage_to_charge_level(Sensors::read_voltage())-1; i++)
@@ -145,7 +151,20 @@ public:
         {
             set_pixel(i, false);
             set_pixel(i+4, false);
-            delay(100);
+            delay(200);
+        }
+    }
+
+    void discharged_animation()
+    {
+        for(byte j = 0; j < 3; j++)
+        {
+            for(byte i = 0; i < 8; i++)
+            {
+                set_pixel(i, true);
+            }
+            delay(500);
+            clear_display();
         }
     }
 
@@ -177,10 +196,31 @@ class Heater
 {
 private:
     byte temp = 0;
+    byte power_level = starting_power_level;
 public:
-    void set_power_level(byte new_power_level = starting_power_level)
+
+    [[nodiscard]] byte get_power_level() const
     {
-        temp = temp_set[new_power_level];
+        return power_level;
+    }
+    void swap_power_level()
+    {
+        set_power_level((power_level+1)%4);
+        run_heater();
+    }
+
+    void set_power_level(signed short int new_power_level = starting_power_level)
+    {
+        if(new_power_level == -1)
+        {
+            temp = 0;
+            power_level = starting_power_level;
+        }
+        else
+        {
+            power_level = new_power_level;
+            temp = temp_set[new_power_level];
+        }
     }
 
     void run_heater() const
@@ -208,20 +248,62 @@ void setup() {
 }
 
 void loop() {
-
     static Display display;
     static Heater heater;
     static byte power_level = starting_power_level;
+    static byte button_pressed_timer = 0;
+    static bool sleep_flag = false;
+    static bool running_charging_animation = false;
     heater.set_power_level(power_level);
     heater.run_heater();
-    Sensors::read_button();
-    long cur_voltage = Sensors::read_voltage();
-    if(cur_voltage > 4700)
+    if(Sensors::read_voltage() <= 2700 && !sleep_flag)
     {
-        display.charging_animation(power_level);
+        display.discharged_animation();
+        heater.set_power_level(-1);
+        //TODO sleep
     }
-    else
+    if(!(millis() % 50))
     {
-        display.show_charge_and_power(power_level);
+        Sensors::Button_state cur_button_state = Sensors::read_button();
+        switch (cur_button_state) {
+            case Sensors::Button_state::TRIGGERED:
+                button_pressed_timer++;
+                break;
+            case Sensors::Button_state::UNTRIGGERED:
+                button_pressed_timer = 0;
+                break;
+            case Sensors::Button_state::ASKED:
+                break;
+        }
     }
+    if(button_pressed_timer >= 40)
+    {
+        button_pressed_timer = 0;
+        if(sleep_flag)
+        {
+            display.power_on_animation();
+            heater.set_power_level(starting_power_level);
+            heater.run_heater();
+            //TODO wakeup;
+        }
+        else
+        {
+            display.power_off_animation();
+            heater.set_power_level(-1);
+            //TODO sleep
+        }
+    }
+    if(button_pressed_timer >=2)
+    {
+        heater.swap_power_level();
+    }
+    if(Sensors::read_voltage() > 4500 && !running_charging_animation || !(millis() % 750))
+    {
+        display.charging_animation(heater.get_power_level());
+    }
+    else if(Sensors::read_voltage() < 4500)
+    {
+        display.show_charge_and_power(heater.get_power_level());
+    }
+
 }
