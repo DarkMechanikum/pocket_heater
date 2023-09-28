@@ -41,11 +41,11 @@ public:
         return result;
     }
 
-    [[nodiscard]]  static float read_temp() {
+    [[nodiscard]] static float read_temp() {
         float tmpPinVoltage = analogRead(temp_pin);
         float tmpR = ((tmpPinVoltage) / (1023 - tmpPinVoltage)) * 100;
-        return 1 / coefficient_A +
-               (1.0 / coefficient_B) * log(tmpR / 100.0); // NOLINT (loss of precision is appropriate)
+        return 1 / coefficient_A +                                      // NOLINT (loss of precision is appropriate)
+               (1.0 / coefficient_B) * log(tmpR / 100.0);
     }
 
     [[nodiscard]] static byte voltage_to_charge_level(long voltage) {
@@ -214,7 +214,6 @@ void sleep() {
     sleep_cpu();
     delay(1);
 }
-
 
 void setup() {
     pinMode(latch_pin, OUTPUT);
